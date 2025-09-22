@@ -73,8 +73,8 @@ export default function HomePage() {
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="w-full max-w-md space-y-8">
           <div className="text-center">
-            <h1 className="text-4xl font-bold text-foreground mb-2">Estimo</h1>
-            <p className="text-muted-foreground text-lg">Enter your username</p>
+            <h1 className="text-3xl sm:text-4xl font-bold text-foreground mb-2">Estimo</h1>
+            <p className="text-muted-foreground text-base sm:text-lg">Enter your username</p>
           </div>
 
           <Card className="border-border">
@@ -125,8 +125,8 @@ export default function HomePage() {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
-          <h1 className="text-4xl font-bold text-foreground mb-2">Estimo</h1>
-          <p className="text-muted-foreground text-lg">Story Point Estimation for Agile Teams</p>
+          <h1 className="text-3xl sm:text-4xl font-bold text-foreground mb-2">Estimo</h1>
+          <p className="text-muted-foreground text-base sm:text-lg">Story Point Estimation for Agile Teams</p>
         </div>
 
         <Card className="border-border">
