@@ -6,8 +6,7 @@ import { Badge } from "../components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog"
 import { Users, Eye, EyeOff, RotateCcw, Copy, Check, QrCode } from "lucide-react"
 import { useToast } from "../hooks/use-toast"
-import { useCollection, useFirestore } from "../../hooks/use-firestore"
-import { createWhereConstraint } from "../../lib/firestore"
+import { useRoom } from "../../hooks/use-firestore"
 
 const STORY_POINTS = [1, 2, 3, 5, 8, 13]
 
@@ -20,111 +19,69 @@ export default function RoomPage() {
   const playerName = searchParams.get("name") || "Anonymous"
   const isHost = searchParams.get("host") === "true"
 
-  const { data: participants } = useCollection('participants', 
-    roomId ? [createWhereConstraint('roomId', '==', roomId)] : []
-  )
-  const { data: votes, refresh: refreshVotes } = useCollection('votes',
-    roomId ? [createWhereConstraint('roomId', '==', roomId)] : []
-  )
-  const { add, update } = useFirestore()
+  const { room, loading, vote: roomVote, revealVotes, startNewRound } = useRoom(roomId, playerName, isHost)
 
   const [currentPlayerVote, setCurrentPlayerVote] = useState<number | null>(null)
-  const [votesRevealed, setVotesRevealed] = useState(false)
   const [copied, setCopied] = useState(false)
   const [showQRCode, setShowQRCode] = useState(false)
-  const hasJoinedRef = useRef(false)
 
   useEffect(() => {
-    if (roomId && playerName && !hasJoinedRef.current) {
-      hasJoinedRef.current = true
-      
-      const storageKey = `participant_${roomId}_${playerName}`
-      const existingParticipantId = localStorage.getItem(storageKey)
-      
-      if (existingParticipantId) {
-        return
+    if (room?.participants) {
+      const currentPlayer = room.participants.find((p: any) => p.name === playerName)
+      if (currentPlayer) {
+        setCurrentPlayerVote(currentPlayer.vote)
       }
+    }
+  }, [room?.participants, playerName])
 
-      add('participants', {
-        roomId,
-        name: playerName,
-        isHost,
-        joinedAt: new Date()
-      }).then((result) => {
-        if (result.success && result.id) {
-          localStorage.setItem(storageKey, result.id)
+  const prevParticipantsRef = useRef<any[]>([])
+  useEffect(() => {
+    if (room?.participants && prevParticipantsRef.current.length > 0) {
+      const newParticipants = room.participants.filter((p: any) => 
+        !prevParticipantsRef.current.some((prev: any) => prev.name === p.name)
+      )
+
+      newParticipants.forEach((p: any) => {
+        if (p.name !== playerName) {
+          toast({
+            title: "Player joined",
+            description: `${p.name} joined the room`,
+          })
         }
       })
     }
-  }, [roomId, playerName, isHost, add])
+    prevParticipantsRef.current = room?.participants || []
+  }, [room?.participants, playerName, toast])
 
+  const prevVotesRevealedRef = useRef(false)
   useEffect(() => {
-    if (roomId && playerName) {
-      const voteStorageKey = `vote_${roomId}_${playerName}`
-      const savedVote = localStorage.getItem(voteStorageKey)
-      
-      if (savedVote) {
-        setCurrentPlayerVote(parseInt(savedVote))
-      } else {
-        const myVote = votes?.find(v => v.participantName === playerName && v.roomId === roomId)
-        if (myVote) {
-          setCurrentPlayerVote(myVote.vote)
-          localStorage.setItem(voteStorageKey, myVote.vote.toString())
-        }
-      }
+    if (room?.votesRevealed && !prevVotesRevealedRef.current && room.participants?.length > 0) {
+      toast({
+        title: "Votes revealed!",
+        description: "All votes are now visible to everyone",
+      })
     }
-  }, [votes, playerName, roomId])
+    prevVotesRevealedRef.current = room?.votesRevealed || false
+  }, [room?.votesRevealed, room?.participants, toast])
 
-  const players = participants?.map(p => {
-    const playerVote = votes?.find(v => v.participantName === p.name)
-    return {
-      id: p.id,
-      name: p.name,
-      vote: playerVote?.vote || null,
-      hasVoted: !!playerVote
-    }
-  }) || []
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-lg">Loading room...</div>
+        </div>
+      </div>
+    )
+  }
 
-  const allPlayersVoted = players.length > 0 && players.every((p) => p.hasVoted)
-  const votedPlayers = players.filter((p) => p.hasVoted)
+  const participants = room?.participants || []
+  const votesRevealed = room?.votesRevealed || false
+  const anyPlayerVoted = participants.some((p: any) => p.hasVoted)
+  const votedPlayers = participants.filter((p: any) => p.hasVoted)
 
   const handleVote = async (points: number) => {
     setCurrentPlayerVote(points)
-    const voteStorageKey = `vote_${roomId}_${playerName}`
-    localStorage.setItem(voteStorageKey, points.toString())
-    
-    const existingVote = votes?.find(v => v.participantName === playerName && v.roomId === roomId)
-    
-    if (existingVote) {
-      await update('votes', existingVote.id, { vote: points })
-    } else {
-      await add('votes', {
-        roomId,
-        participantName: playerName,
-        vote: points,
-        votedAt: new Date()
-      })
-    }
-    refreshVotes()
-  }
-
-  const revealVotes = () => {
-    setVotesRevealed(true)
-  }
-
-  const startNewRound = async () => {
-    setVotesRevealed(false)
-    setCurrentPlayerVote(null)
-    
-    const voteStorageKey = `vote_${roomId}_${playerName}`
-    localStorage.removeItem(voteStorageKey)
-    
-    if (votes) {
-      for (const vote of votes) {
-        await update('votes', vote.id, { vote: null })
-      }
-      refreshVotes()
-    }
+    await roomVote(points)
   }
 
   const copyRoomLink = async () => {
@@ -144,8 +101,8 @@ export default function RoomPage() {
   }
 
   const getAverage = () => {
-    const votes = players.filter((p) => p.vote !== null).map((p) => p.vote!)
-    return votes.length > 0 ? (votes.reduce((a, b) => a + b, 0) / votes.length).toFixed(1) : "0"
+    const votes = participants.filter((p: any) => p.vote !== null).map((p: any) => p.vote!)
+    return votes.length > 0 ? (votes.reduce((a: number, b: number) => a + b, 0) / votes.length).toFixed(1) : "0"
   }
 
   return (
@@ -197,14 +154,14 @@ export default function RoomPage() {
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
           <div className="flex items-center gap-1">
             <Users className="h-4 w-4" />
-            {players.length} player{players.length !== 1 ? "s" : ""}
+            {participants.length} player{participants.length !== 1 ? "s" : ""}
           </div>
           <div className="flex items-center gap-1">
             {votesRevealed ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
             {votesRevealed ? "Votes revealed" : "Votes hidden"}
           </div>
           <div>
-            {votedPlayers.length}/{players.length} voted
+            {votedPlayers.length}/{participants.length} voted
           </div>
         </div>
 
@@ -237,8 +194,8 @@ export default function RoomPage() {
 
         {/* Players Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {players.map((player) => (
-            <Card key={player.id} className="border-border">
+          {participants.map((player: any) => (
+            <Card key={player.name} className="border-border">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-semibold text-card-foreground">{player.name}</h3>
@@ -285,13 +242,13 @@ export default function RoomPage() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-foreground">
-                    {Math.min(...players.filter((p) => p.vote !== null).map((p) => p.vote!))}
+                    {Math.min(...participants.filter((p: any) => p.vote !== null).map((p: any) => p.vote!))}
                   </p>
                   <p className="text-sm text-muted-foreground">Minimum</p>
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-foreground">
-                    {Math.max(...players.filter((p) => p.vote !== null).map((p) => p.vote!))}
+                    {Math.max(...participants.filter((p: any) => p.vote !== null).map((p: any) => p.vote!))}
                   </p>
                   <p className="text-sm text-muted-foreground">Maximum</p>
                 </div>
@@ -309,7 +266,7 @@ export default function RoomPage() {
           <div className="flex gap-3 justify-center">
             <Button
               onClick={revealVotes}
-              disabled={!allPlayersVoted || votesRevealed}
+              disabled={!anyPlayerVoted || votesRevealed}
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               <Eye className="h-4 w-4 mr-2" />

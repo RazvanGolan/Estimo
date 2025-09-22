@@ -6,11 +6,14 @@ import {
   getDocs, 
   updateDoc, 
   deleteDoc, 
+  setDoc,
   query, 
   where, 
   orderBy, 
   limit,
-  QueryConstraint
+  onSnapshot,
+  QueryConstraint,
+  Unsubscribe
 } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -20,6 +23,17 @@ export const addDocument = async (collectionName: string, data: any) => {
     return { success: true, id: docRef.id };
   } catch (error) {
     console.error('Error adding document:', error);
+    return { success: false, error };
+  }
+};
+
+export const setDocument = async (collectionName: string, id: string, data: any) => {
+  try {
+    const docRef = doc(db, collectionName, id);
+    await setDoc(docRef, data);
+    return { success: true, id };
+  } catch (error) {
+    console.error('Error setting document:', error);
     return { success: false, error };
   }
 };
@@ -91,3 +105,36 @@ export const createOrderByConstraint = (field: string, direction: 'asc' | 'desc'
 
 export const createLimitConstraint = (limitCount: number) => 
   limit(limitCount);
+
+export const subscribeToDocument = (
+  collectionName: string,
+  id: string,
+  callback: (data: any | null) => void,
+  errorCallback?: (error: any) => void
+): Unsubscribe => {
+  try {
+    const docRef = doc(db, collectionName, id);
+    
+    return onSnapshot(docRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          callback({ id: docSnap.id, ...docSnap.data() });
+        } else {
+          callback(null);
+        }
+      },
+      (error) => {
+        console.error('Error in document snapshot:', error);
+        if (errorCallback) {
+          errorCallback(error);
+        }
+      }
+    );
+  } catch (error) {
+    console.error('Error setting up document listener:', error);
+    if (errorCallback) {
+      errorCallback(error);
+    }
+    return () => {}; // Return empty unsubscribe function
+  }
+};
