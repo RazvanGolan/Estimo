@@ -4,7 +4,7 @@ import { Button } from "../components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Badge } from "../components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog"
-import { Users, Eye, EyeOff, RotateCcw, Copy, Check, QrCode, Trash2, LogOut } from "lucide-react"
+import { Users, Eye, EyeOff, RotateCcw, Copy, Check, QrCode, Trash2, LogOut, Github } from "lucide-react"
 import { useToast } from "../hooks/use-toast"
 import { useRoom } from "../../hooks/use-firestore"
 
@@ -151,12 +151,12 @@ export default function RoomPage() {
     <div className="min-h-screen bg-background p-4">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Room {roomId}</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Room {roomId}</h1>
             <p className="text-muted-foreground">{isHost ? "You are the host" : `Joined as ${playerName}`}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Dialog open={showQRCode} onOpenChange={setShowQRCode}>
               <DialogTrigger asChild>
                 <Button
@@ -165,7 +165,7 @@ export default function RoomPage() {
                   className="border-border hover:bg-accent hover:text-accent-foreground bg-transparent"
                 >
                   <QrCode className="h-4 w-4" />
-                  QR Code
+                  <span className="hidden sm:inline">QR Code</span>
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-md">
@@ -187,7 +187,7 @@ export default function RoomPage() {
               className="border-border hover:bg-accent hover:text-accent-foreground bg-transparent"
             >
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-              {copied ? "Copied!" : "Share Room"}
+              <span className="hidden sm:inline">{copied ? "Copied!" : "Share Room"}</span>
             </Button>
             <Button
               onClick={() => handleRemovePlayer(playerName)}
@@ -196,20 +196,21 @@ export default function RoomPage() {
               className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
             >
               <LogOut className="h-4 w-4" />
-              Leave Room
+              <span className="hidden sm:inline">Leave Room</span>
             </Button>
           </div>
         </div>
 
         {/* Stats */}
-        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
           <div className="flex items-center gap-1">
             <Users className="h-4 w-4" />
             {participants.length} player{participants.length !== 1 ? "s" : ""}
           </div>
           <div className="flex items-center gap-1">
             {votesRevealed ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-            {votesRevealed ? "Votes revealed" : "Votes hidden"}
+            <span className="hidden sm:inline">{votesRevealed ? "Votes revealed" : "Votes hidden"}</span>
+            <span className="sm:hidden">{votesRevealed ? "Revealed" : "Hidden"}</span>
           </div>
           <div>
             {votedPlayers.length}/{participants.length} voted
@@ -223,7 +224,7 @@ export default function RoomPage() {
               <CardTitle>Select Your Story Points</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+              <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-12 gap-2 sm:gap-3">
                 {STORY_POINTS.map((points) => (
                   <Button
                     key={points}
@@ -244,7 +245,7 @@ export default function RoomPage() {
         )}
 
         {/* Players Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {participants.map((player: any) => (
             <Card key={player.name} className="border-border">
               <CardContent className="p-4">
@@ -299,7 +300,7 @@ export default function RoomPage() {
               <CardTitle>Results Summary</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
                 <div>
                   <p className="text-2xl font-bold text-primary">{getAverage()}</p>
                   <p className="text-sm text-muted-foreground">Average</p>
@@ -353,6 +354,19 @@ export default function RoomPage() {
             </Button>
           </div>
         )}
+
+        {/* Footer */}
+        <div className="flex justify-center pt-8">
+          <Button
+            onClick={() => window.open("https://github.com/RazvanGolan/Estimo", "_blank")}
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <Github className="h-4 w-4 mr-2" />
+            View on GitHub
+          </Button>
+        </div>
       </div>
     </div>
   )
