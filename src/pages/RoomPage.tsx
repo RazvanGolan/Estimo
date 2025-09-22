@@ -4,6 +4,8 @@ import { Button } from "../components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Badge } from "../components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog"
+import { Input } from "../components/ui/input"
+import { Label } from "../components/ui/label"
 import { Users, Eye, EyeOff, RotateCcw, Copy, Check, QrCode, Trash2, LogOut, Github } from "lucide-react"
 import { useToast } from "../hooks/use-toast"
 import { useRoom } from "../../hooks/use-firestore"
@@ -16,14 +18,48 @@ export default function RoomPage() {
   const { toast } = useToast()
 
   const searchParams = new URLSearchParams(location.search)
-  const playerName = searchParams.get("name") || "Anonymous"
+  const urlPlayerName = searchParams.get("name")
   const isHost = searchParams.get("host") === "true"
 
-  const { room, loading, hasJoined, vote: roomVote, revealVotes, startNewRound, removePlayer } = useRoom(roomId, playerName, isHost)
+  const [playerName, setPlayerName] = useState<string>(() => {
+    const storedName = localStorage.getItem("estimo_player_name")
+    if (storedName) {
+      return storedName
+    }
+    if (urlPlayerName) {
+      return urlPlayerName
+    }
+    return ""
+  })
+
+  const [showNameModal, setShowNameModal] = useState<boolean>(() => {
+    return !urlPlayerName && !localStorage.getItem("estimo_player_name")
+  })
+
+  const [tempName, setTempName] = useState("")
+
+  const { room, loading, hasJoined, vote: roomVote, revealVotes, startNewRound, removePlayer } = useRoom(
+    roomId, 
+    playerName, 
+    isHost
+  )
 
   const [currentPlayerVote, setCurrentPlayerVote] = useState<number | string | null>(null)
   const [copied, setCopied] = useState(false)
   const [showQRCode, setShowQRCode] = useState(false)
+
+  const handleNameSubmit = () => {
+    if (!tempName.trim()) return
+    
+    const finalName = tempName.trim()
+    setPlayerName(finalName)
+    localStorage.setItem("estimo_player_name", finalName)
+    setShowNameModal(false)
+    
+    const newUrl = new URL(window.location.href)
+    newUrl.searchParams.set("name", finalName)
+    window.history.replaceState({}, "", newUrl.toString())
+  }
 
   useEffect(() => {
     if (playerName) {
@@ -87,6 +123,41 @@ export default function RoomPage() {
     prevVotesRevealedRef.current = room?.votesRevealed || false
   }, [room?.votesRevealed, room?.participants, toast])
 
+  // Show modal if no player name
+  if (!playerName) {
+    return (
+      <div className="min-h-screen bg-background p-4">
+        <Dialog open={showNameModal} onOpenChange={() => {}}>
+          <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
+            <DialogHeader>
+              <DialogTitle>Join Room {roomId}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="playerName">Your Name</Label>
+                <Input
+                  id="playerName"
+                  placeholder="Enter your name"
+                  value={tempName}
+                  onChange={(e) => setTempName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleNameSubmit()}
+                  autoFocus
+                />
+              </div>
+              <Button
+                onClick={handleNameSubmit}
+                disabled={!tempName.trim()}
+                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
+              >
+                Join Room
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    )
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -125,7 +196,7 @@ export default function RoomPage() {
   }
 
   const copyRoomLink = async () => {
-    const url = `${window.location.origin}/room/${roomId}?name=`
+    const url = `${window.location.origin}/room/${roomId}`
     await navigator.clipboard.writeText(url)
     setCopied(true)
     toast({
@@ -136,7 +207,7 @@ export default function RoomPage() {
   }
 
   const generateQRCode = () => {
-    const roomUrl = `${window.location.origin}/room/${roomId}?name=`
+    const roomUrl = `${window.location.origin}/room/${roomId}`
     return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(roomUrl)}`
   }
 
