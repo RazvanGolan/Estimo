@@ -4,11 +4,11 @@ import { Button } from "../components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Badge } from "../components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog"
-import { Users, Eye, EyeOff, RotateCcw, Copy, Check, QrCode } from "lucide-react"
+import { Users, Eye, EyeOff, RotateCcw, Copy, Check, QrCode, Trash2, LogOut } from "lucide-react"
 import { useToast } from "../hooks/use-toast"
 import { useRoom } from "../../hooks/use-firestore"
 
-const STORY_POINTS = [1, 2, 3, 5, 8, 13]
+const STORY_POINTS = [1, 2, 3, 5, 8, 13, 21, 34, '?', '∞', '☕', '🥷']
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>()
@@ -19,11 +19,17 @@ export default function RoomPage() {
   const playerName = searchParams.get("name") || "Anonymous"
   const isHost = searchParams.get("host") === "true"
 
-  const { room, loading, vote: roomVote, revealVotes, startNewRound } = useRoom(roomId, playerName, isHost)
+  const { room, loading, hasJoined, vote: roomVote, revealVotes, startNewRound, removePlayer } = useRoom(roomId, playerName, isHost)
 
-  const [currentPlayerVote, setCurrentPlayerVote] = useState<number | null>(null)
+  const [currentPlayerVote, setCurrentPlayerVote] = useState<number | string | null>(null)
   const [copied, setCopied] = useState(false)
   const [showQRCode, setShowQRCode] = useState(false)
+
+  useEffect(() => {
+    if (playerName) {
+      localStorage.setItem("estimo_player_name", playerName)
+    }
+  }, [playerName])
 
   useEffect(() => {
     if (room?.participants) {
@@ -53,6 +59,23 @@ export default function RoomPage() {
     prevParticipantsRef.current = room?.participants || []
   }, [room?.participants, playerName, toast])
 
+  // Check if current user has been removed from the room
+  useEffect(() => {
+    if (room && !loading && room.participants && playerName && hasJoined) {
+      const currentPlayer = room.participants.find((p: any) => p.name === playerName)
+      
+      if (!currentPlayer) {
+        
+        toast({
+          title: "You were removed from the room",
+          description: "Redirecting to home page...",
+        })
+        
+        window.location.href = "/"
+      }
+    }
+  }, [room, loading, playerName, hasJoined, toast])
+
   const prevVotesRevealedRef = useRef(false)
   useEffect(() => {
     if (room?.votesRevealed && !prevVotesRevealedRef.current && room.participants?.length > 0) {
@@ -79,9 +102,26 @@ export default function RoomPage() {
   const anyPlayerVoted = participants.some((p: any) => p.hasVoted)
   const votedPlayers = participants.filter((p: any) => p.hasVoted)
 
-  const handleVote = async (points: number) => {
+  const handleVote = async (points: number | string) => {
     setCurrentPlayerVote(points)
     await roomVote(points)
+  }
+
+  const handleRemovePlayer = async (playerToRemove: string) => {
+    if (playerToRemove === playerName) {
+      if (window.confirm("Are you sure you want to leave the room?")) {
+        await removePlayer(playerToRemove)
+        window.location.href = "/"
+      }
+    } else if (isHost) {
+      if (window.confirm(`Are you sure you want to remove ${playerToRemove} from the room?`)) {
+        await removePlayer(playerToRemove)
+        toast({
+          title: "Player removed",
+          description: `${playerToRemove} has been removed from the room`,
+        })
+      }
+    }
   }
 
   const copyRoomLink = async () => {
@@ -101,8 +141,10 @@ export default function RoomPage() {
   }
 
   const getAverage = () => {
-    const votes = participants.filter((p: any) => p.vote !== null).map((p: any) => p.vote!)
-    return votes.length > 0 ? (votes.reduce((a: number, b: number) => a + b, 0) / votes.length).toFixed(1) : "0"
+    const numericVotes = participants
+      .filter((p: any) => p.vote !== null && typeof p.vote === 'number')
+      .map((p: any) => p.vote!)
+    return numericVotes.length > 0 ? (numericVotes.reduce((a: number, b: number) => a + b, 0) / numericVotes.length).toFixed(1) : "0"
   }
 
   return (
@@ -146,6 +188,15 @@ export default function RoomPage() {
             >
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               {copied ? "Copied!" : "Share Room"}
+            </Button>
+            <Button
+              onClick={() => handleRemovePlayer(playerName)}
+              variant="outline"
+              size="sm"
+              className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+            >
+              <LogOut className="h-4 w-4" />
+              Leave Room
             </Button>
           </div>
         </div>
@@ -198,11 +249,24 @@ export default function RoomPage() {
             <Card key={player.name} className="border-border">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-card-foreground">{player.name}</h3>
-                  {player.name === playerName && (
-                    <Badge variant="secondary" className="bg-secondary text-secondary-foreground">
-                      You
-                    </Badge>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-card-foreground">{player.name}</h3>
+                    {player.name === playerName && (
+                      <Badge variant="secondary" className="bg-secondary text-secondary-foreground">
+                        You
+                      </Badge>
+                    )}
+                  </div>
+                  {(isHost && player.name !== playerName) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleRemovePlayer(player.name)}
+                      className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                      title={player.name === playerName ? "Leave room" : "Remove player"}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
                   )}
                 </div>
 
@@ -242,13 +306,19 @@ export default function RoomPage() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-foreground">
-                    {Math.min(...participants.filter((p: any) => p.vote !== null).map((p: any) => p.vote!))}
+                    {(() => {
+                      const numericVotes = participants.filter((p: any) => p.vote !== null && typeof p.vote === 'number').map((p: any) => p.vote!);
+                      return numericVotes.length > 0 ? Math.min(...numericVotes) : 'N/A';
+                    })()}
                   </p>
                   <p className="text-sm text-muted-foreground">Minimum</p>
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-foreground">
-                    {Math.max(...participants.filter((p: any) => p.vote !== null).map((p: any) => p.vote!))}
+                    {(() => {
+                      const numericVotes = participants.filter((p: any) => p.vote !== null && typeof p.vote === 'number').map((p: any) => p.vote!);
+                      return numericVotes.length > 0 ? Math.max(...numericVotes) : 'N/A';
+                    })()}
                   </p>
                   <p className="text-sm text-muted-foreground">Maximum</p>
                 </div>
@@ -263,7 +333,7 @@ export default function RoomPage() {
 
         {/* Host Controls */}
         {isHost && (
-          <div className="flex gap-3 justify-center">
+          <div className="flex gap-3 justify-center flex-wrap">
             <Button
               onClick={revealVotes}
               disabled={!anyPlayerVoted || votesRevealed}

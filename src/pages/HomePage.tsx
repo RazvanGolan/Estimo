@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { Button } from "../components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
@@ -16,6 +16,25 @@ export default function HomePage() {
   const navigate = useNavigate()
   const { add } = useFirestore()
 
+  useEffect(() => {
+    const savedPlayerName = localStorage.getItem("estimo_player_name")
+    if (savedPlayerName) {
+      setPlayerName(savedPlayerName)
+    }
+  }, [])
+
+  const saveUserData = (name: string) => {
+    localStorage.setItem("estimo_player_name", name)
+  }
+
+  const clearStoredData = () => {
+    if (window.confirm("This will clear your saved name. Are you sure?")) {
+      localStorage.removeItem("estimo_player_name")
+      setPlayerName("")
+      setRoomId("")
+    }
+  }
+
   const handleCreateRoom = () => {
     setActionType("create")
     setShowUsernameForm(true)
@@ -30,6 +49,8 @@ export default function HomePage() {
   const submitUsername = async () => {
     if (!playerName.trim()) return
 
+    saveUserData(playerName.trim())
+
     if (actionType === "create") {
       const newRoomId = Math.random().toString(36).substring(2, 8).toUpperCase()
       await add('rooms', {
@@ -39,8 +60,10 @@ export default function HomePage() {
         isActive: true,
         participants: [playerName]
       })
+      saveUserData(playerName.trim())
       navigate(`/room/${newRoomId}?name=${encodeURIComponent(playerName)}&host=true`)
     } else {
+      saveUserData(playerName.trim())
       navigate(`/room/${roomId}?name=${encodeURIComponent(playerName)}`)
     }
   }
@@ -153,8 +176,18 @@ export default function HomePage() {
           </CardContent>
         </Card>
 
-        <div className="text-center text-sm text-muted-foreground">
+        <div className="text-center text-sm text-muted-foreground space-y-2">
           <p>Planning poker made simple</p>
+          {playerName && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearStoredData}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Clear stored data
+            </Button>
+          )}
         </div>
       </div>
     </div>
