@@ -222,7 +222,7 @@ export const useRoom = (roomId: string | undefined, playerName: string, isHost: 
     }
   }, [roomId, playerName, loading, roomData, hasJoined]);
 
-  const vote = async (points: number) => {
+  const vote = async (points: number | string) => {
     if (!roomId || !playerName || !roomData) return;
 
     const participants = roomData.participants || [];
@@ -258,12 +258,25 @@ export const useRoom = (roomId: string | undefined, playerName: string, isHost: 
     });
   };
 
+  const removePlayer = async (playerName: string) => {
+    if (!roomId || !roomData) return;
+
+    const participants = roomData.participants || [];
+    const updatedParticipants = participants.filter((p: any) => p.name !== playerName);
+
+    await update('rooms', roomId, {
+      participants: updatedParticipants
+    });
+  };
+
   return {
     room: roomData,
     loading,
+    hasJoined,
     joinRoom,
     vote,
     revealVotes,
-    startNewRound
+    startNewRound,
+    removePlayer
   };
 };
