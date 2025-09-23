@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { useParams, useLocation } from "react-router-dom"
 import { Button } from "../components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
@@ -48,7 +48,25 @@ export default function RoomPage() {
   const [copied, setCopied] = useState(false)
   const [showQRCode, setShowQRCode] = useState(false)
 
-  const handleNameSubmit = () => {
+  const prevParticipantsRef = useRef<any[]>([])
+  const prevVotesRevealedRef = useRef(false)
+
+  const participants = useMemo(() => room?.participants || [], [room?.participants])
+  
+  const { anyPlayerVoted, votedPlayers } = useMemo(() => {
+    const voted = participants.filter((p: any) => p.hasVoted)
+    return {
+      anyPlayerVoted: voted.length > 0,
+      votedPlayers: voted
+    }
+  }, [participants])
+
+  const handleVote = useCallback(async (points: number | string) => {
+    setCurrentPlayerVote(points)
+    await roomVote(points)
+  }, [roomVote])
+
+  const handleNameSubmit = useCallback(() => {
     if (!tempName.trim()) return
     
     const finalName = tempName.trim()
@@ -59,7 +77,7 @@ export default function RoomPage() {
     const newUrl = new URL(window.location.href)
     newUrl.searchParams.set("name", finalName)
     window.history.replaceState({}, "", newUrl.toString())
-  }
+  }, [tempName])
 
   useEffect(() => {
     if (playerName) {
@@ -76,7 +94,6 @@ export default function RoomPage() {
     }
   }, [room?.participants, playerName])
 
-  const prevParticipantsRef = useRef<any[]>([])
   useEffect(() => {
     if (room?.participants && prevParticipantsRef.current.length > 0) {
       const newParticipants = room.participants.filter((p: any) => 
@@ -112,7 +129,6 @@ export default function RoomPage() {
     }
   }, [room, loading, playerName, hasJoined, toast])
 
-  const prevVotesRevealedRef = useRef(false)
   useEffect(() => {
     if (room?.votesRevealed && !prevVotesRevealedRef.current && room.participants?.length > 0) {
       toast({
@@ -123,10 +139,54 @@ export default function RoomPage() {
     prevVotesRevealedRef.current = room?.votesRevealed || false
   }, [room?.votesRevealed, room?.participants, toast])
 
-  // Show modal if no player name
-  if (!playerName) {
-    return (
-      <div className="min-h-screen bg-background p-4">
+  const handleRemovePlayer = useCallback(async (playerToRemove: string) => {
+    if (playerToRemove === playerName) {
+      if (window.confirm("Are you sure you want to leave the room?")) {
+        await removePlayer(playerToRemove)
+        window.location.href = "/"
+      }
+    } else if (isHost) {
+      if (window.confirm(`Are you sure you want to remove ${playerToRemove} from the room?`)) {
+        await removePlayer(playerToRemove)
+        toast({
+          title: "Player removed",
+          description: `${playerToRemove} has been removed from the room`,
+        })
+      }
+    }
+  }, [playerName, isHost, removePlayer, toast])
+
+  const copyRoomLink = useCallback(async () => {
+    const url = `${window.location.origin}/room/${roomId}`
+    await navigator.clipboard.writeText(url)
+    setCopied(true)
+    toast({
+      title: "Room link copied!",
+      description: "Share this link with your team members.",
+    })
+    setTimeout(() => setCopied(false), 2000)
+  }, [roomId, toast])
+
+  const generateQRCode = useCallback(() => {
+    const roomUrl = `${window.location.origin}/room/${roomId}`
+    return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(roomUrl)}`
+  }, [roomId])
+
+  const getAverage = useCallback(() => {
+    const numericVotes = participants
+      .filter((p: any) => p.vote !== null && typeof p.vote === 'number')
+      .map((p: any) => p.vote!)
+    return numericVotes.length > 0 ? (numericVotes.reduce((a: number, b: number) => a + b, 0) / numericVotes.length).toFixed(1) : "0"
+  }, [participants])
+
+  const showNameDialog = !playerName
+  const showLoading = !showNameDialog && loading
+
+  const votesRevealed = room?.votesRevealed || false
+
+  return (
+    <div className="min-h-screen bg-background p-4">
+      {showNameDialog && (
         <Dialog open={showNameModal} onOpenChange={() => {}}>
           <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
             <DialogHeader>
@@ -154,72 +214,15 @@ export default function RoomPage() {
             </div>
           </DialogContent>
         </Dialog>
-      </div>
-    )
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-lg">Loading room...</div>
+      )}
+      {showLoading && (
+        <div className="flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-lg">Loading room...</div>
+          </div>
         </div>
-      </div>
-    )
-  }
-
-  const participants = room?.participants || []
-  const votesRevealed = room?.votesRevealed || false
-  const anyPlayerVoted = participants.some((p: any) => p.hasVoted)
-  const votedPlayers = participants.filter((p: any) => p.hasVoted)
-
-  const handleVote = async (points: number | string) => {
-    setCurrentPlayerVote(points)
-    await roomVote(points)
-  }
-
-  const handleRemovePlayer = async (playerToRemove: string) => {
-    if (playerToRemove === playerName) {
-      if (window.confirm("Are you sure you want to leave the room?")) {
-        await removePlayer(playerToRemove)
-        window.location.href = "/"
-      }
-    } else if (isHost) {
-      if (window.confirm(`Are you sure you want to remove ${playerToRemove} from the room?`)) {
-        await removePlayer(playerToRemove)
-        toast({
-          title: "Player removed",
-          description: `${playerToRemove} has been removed from the room`,
-        })
-      }
-    }
-  }
-
-  const copyRoomLink = async () => {
-    const url = `${window.location.origin}/room/${roomId}`
-    await navigator.clipboard.writeText(url)
-    setCopied(true)
-    toast({
-      title: "Room link copied!",
-      description: "Share this link with your team members.",
-    })
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  const generateQRCode = () => {
-    const roomUrl = `${window.location.origin}/room/${roomId}`
-    return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(roomUrl)}`
-  }
-
-  const getAverage = () => {
-    const numericVotes = participants
-      .filter((p: any) => p.vote !== null && typeof p.vote === 'number')
-      .map((p: any) => p.vote!)
-    return numericVotes.length > 0 ? (numericVotes.reduce((a: number, b: number) => a + b, 0) / numericVotes.length).toFixed(1) : "0"
-  }
-
-  return (
-    <div className="min-h-screen bg-background p-4">
+      )}
+      {!showNameDialog && !showLoading && (
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -439,6 +442,7 @@ export default function RoomPage() {
           </Button>
         </div>
       </div>
+  )}
     </div>
   )
 }
