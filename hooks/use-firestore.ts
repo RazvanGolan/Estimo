@@ -10,6 +10,22 @@ import {
 } from '../lib/firestore';
 import { QueryConstraint } from 'firebase/firestore';
 
+const useDebounce = (value: any, delay: number) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+};
+
 export const useDocument = (
   collectionName: string, 
   id: string | null,
@@ -172,6 +188,24 @@ export const useRoom = (roomId: string | undefined, playerName: string, isHost: 
   const { set, update } = useFirestore();
   const { data: roomData, loading } = useDocument('rooms', roomId || null, true);
   const [hasJoined, setHasJoined] = useState(false);
+  const [pendingUpdates, setPendingUpdates] = useState<any>(null);
+
+  const debouncedUpdates = useDebounce(pendingUpdates, 300);
+
+  useEffect(() => {
+    if (debouncedUpdates && roomId) {
+      update('rooms', roomId, debouncedUpdates);
+      setPendingUpdates(null);
+    }
+  }, [debouncedUpdates, roomId, update]);
+
+  const batchUpdate = (updates: any) => {
+    setPendingUpdates((prev: any) => ({
+      ...prev,
+      ...updates,
+      lastUpdated: new Date()
+    }));
+  };
 
   const joinRoom = async () => {
     if (!roomId || !playerName || hasJoined) return;
@@ -232,7 +266,7 @@ export const useRoom = (roomId: string | undefined, playerName: string, isHost: 
         : p
     );
 
-    await update('rooms', roomId, {
+    batchUpdate({
       participants: updatedParticipants
     });
   };
