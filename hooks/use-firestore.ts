@@ -6,25 +6,13 @@ import {
   updateDocument, 
   deleteDocument,
   setDocument,
-  subscribeToDocument
+  subscribeToDocument,
+  joinRoomTransaction,
+  updatePlayerVoteTransaction,
+  removePlayerTransaction
 } from '../lib/firestore';
 import { QueryConstraint } from 'firebase/firestore';
 
-const useDebounce = (value: any, delay: number) => {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedValue(value);
-    }, delay);
-
-    return () => {
-      clearTimeout(handler);
-    };
-  }, [value, delay]);
-
-  return debouncedValue;
-};
 
 export const useDocument = (
   collectionName: string, 
@@ -185,30 +173,19 @@ export const useFirestore = () => {
 };
 
 export const useRoom = (roomId: string | undefined, playerName: string, isHost: boolean) => {
-  const { set, update } = useFirestore();
+  const { update } = useFirestore();
   const { data: roomData, loading } = useDocument('rooms', roomId || null, true);
   const [hasJoined, setHasJoined] = useState(false);
-  const [pendingUpdates, setPendingUpdates] = useState<any>(null);
-
-  const debouncedUpdates = useDebounce(pendingUpdates, 300);
-
-  useEffect(() => {
-    if (debouncedUpdates && roomId) {
-      update('rooms', roomId, debouncedUpdates);
-      setPendingUpdates(null);
-    }
-  }, [debouncedUpdates, roomId, update]);
-
-  const batchUpdate = (updates: any) => {
-    setPendingUpdates((prev: any) => ({
-      ...prev,
-      ...updates,
-      lastUpdated: new Date()
-    }));
-  };
+  const [isJoining, setIsJoining] = useState(false);
+  const [lastVoteTime, setLastVoteTime] = useState(0);
 
   const joinRoom = async () => {
-    if (!roomId || !playerName || hasJoined) return;
+    if (!roomId || !playerName || hasJoined || isJoining) return;
+    
+    setIsJoining(true);
+    
+    const randomDelay = Math.random() * 500;
+    await new Promise(resolve => setTimeout(resolve, randomDelay));
 
     const participant = {
       name: playerName,
@@ -219,56 +196,55 @@ export const useRoom = (roomId: string | undefined, playerName: string, isHost: 
     };
 
     try {
-      if (roomData) {
-        const existingParticipants = roomData.participants || [];
-        const participantExists = existingParticipants.some((p: any) => p.name === playerName);
-        
-        if (!participantExists) {
-          const updatedParticipants = [...existingParticipants, participant];
-          await update('rooms', roomId, {
-            participants: updatedParticipants
-          });
-        } else {
-          const updatedParticipants = existingParticipants.map((p: any) => 
-            p.name === playerName ? { ...p, isHost, joinedAt: new Date() } : p
-          );
-          await update('rooms', roomId, {
-            participants: updatedParticipants
-          });
-        }
-      } else if (roomData === null) {
-        await set('rooms', roomId, {
-          createdAt: new Date(),
-          votesRevealed: false,
-          participants: [participant]
-        });
-      }
+      console.log('Attempting to join room:', roomId, 'as:', playerName);
       
-      setHasJoined(true);
+      const joinPromise = joinRoomTransaction(roomId, participant);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Join timeout')), 10000)
+      );
+      
+      const result = await Promise.race([joinPromise, timeoutPromise]) as any;
+      
+      if (result && result.success) {
+        console.log('Successfully joined room:', result);
+        setHasJoined(true);
+      } else {
+        console.warn('Join failed, retrying...', result);
+        setTimeout(() => {
+          setIsJoining(false);
+          joinRoom();
+        }, 1000 + Math.random() * 1000);
+      }
     } catch (error) {
-      console.error('Error joining room:', error);
+      console.error('Join error:', error);
+      setTimeout(() => {
+        setIsJoining(false);
+        joinRoom();
+      }, 2000 + Math.random() * 1000);
+    } finally {
+      setIsJoining(false);
     }
   };
 
   useEffect(() => {
-    if (roomId && playerName && !loading && roomData !== undefined && !hasJoined) {
-      joinRoom();
+    if (roomId && playerName && !loading && !hasJoined && !isJoining) {
+      const timeout = setTimeout(joinRoom, Math.random() * 200);
+      return () => clearTimeout(timeout);
     }
-  }, [roomId, playerName, loading, roomData, hasJoined]);
+  }, [roomId, playerName, loading, hasJoined, isJoining]);
 
   const vote = async (points: number | string) => {
-    if (!roomId || !playerName || !roomData) return;
+    if (!roomId || !playerName) return;
 
-    const participants = roomData.participants || [];
-    const updatedParticipants = participants.map((p: any) => 
-      p.name === playerName 
-        ? { ...p, vote: points, hasVoted: true }
-        : p
-    );
+    const now = Date.now();
+    if (now - lastVoteTime < 500) return;
+    setLastVoteTime(now);
 
-    batchUpdate({
-      participants: updatedParticipants
-    });
+    try {
+      await updatePlayerVoteTransaction(roomId, playerName, points, true);
+    } catch (error) {
+      console.error('Vote error:', error);
+    }
   };
 
   const revealVotes = async () => {
@@ -292,21 +268,21 @@ export const useRoom = (roomId: string | undefined, playerName: string, isHost: 
     });
   };
 
-  const removePlayer = async (playerName: string) => {
-    if (!roomId || !roomData) return;
+  const removePlayer = async (playerToRemove: string) => {
+    if (!roomId) return;
 
-    const participants = roomData.participants || [];
-    const updatedParticipants = participants.filter((p: any) => p.name !== playerName);
-
-    await update('rooms', roomId, {
-      participants: updatedParticipants
-    });
+    try {
+      await removePlayerTransaction(roomId, playerToRemove);
+    } catch (error) {
+      console.error('Remove player error:', error);
+    }
   };
 
   return {
     room: roomData,
     loading,
     hasJoined,
+    isJoining,
     joinRoom,
     vote,
     revealVotes,

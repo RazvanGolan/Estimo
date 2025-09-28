@@ -13,7 +13,10 @@ import {
   limit,
   onSnapshot,
   QueryConstraint,
-  Unsubscribe
+  Unsubscribe,
+  arrayUnion,
+  arrayRemove,
+  runTransaction
 } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -137,4 +140,164 @@ export const subscribeToDocument = (
     }
     return () => {}; // Return empty unsubscribe function
   }
+};
+
+export const addToArray = async (collectionName: string, id: string, field: string, value: any) => {
+  try {
+    const docRef = doc(db, collectionName, id);
+    await updateDoc(docRef, {
+      [field]: arrayUnion(value)
+    });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error };
+  }
+};
+
+export const removeFromArray = async (collectionName: string, id: string, field: string, value: any) => {
+  try {
+    const docRef = doc(db, collectionName, id);
+    await updateDoc(docRef, {
+      [field]: arrayRemove(value)
+    });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error };
+  }
+};
+
+export const joinRoomTransaction = async (roomId: string, participant: any) => {
+  const maxRetries = 3;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const result = await runTransaction(db, async (transaction) => {
+        const roomRef = doc(db, 'rooms', roomId);
+        const roomDoc = await transaction.get(roomRef);
+        
+        if (!roomDoc.exists()) {
+          transaction.set(roomRef, {
+            createdAt: new Date(),
+            votesRevealed: false,
+            participants: [participant]
+          });
+          return { success: true, created: true };
+        } else {
+          const roomData = roomDoc.data();
+          const existingParticipants = roomData.participants || [];
+          
+          const participantExists = existingParticipants.some((p: any) => 
+            p.name === participant.name
+          );
+          
+          if (participantExists) {
+            const updatedParticipants = existingParticipants.map((p: any) => 
+              p.name === participant.name 
+                ? { ...p, ...participant, joinedAt: new Date() }
+                : p
+            );
+            transaction.update(roomRef, { participants: updatedParticipants });
+            return { success: true, updated: true };
+          } else {
+            const updatedParticipants = [...existingParticipants, participant];
+            transaction.update(roomRef, { participants: updatedParticipants });
+            return { success: true, added: true };
+          }
+        }
+      });
+      
+      return result;
+    } catch (error: any) {
+      console.error('Transaction error:', error);
+      if (error.code === 'aborted' && attempt < maxRetries - 1) {
+        const delay = Math.random() * 1000 + (attempt * 500);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      
+      return { success: false, error };
+    }
+  }
+  
+  return { success: false, error: new Error('Transaction failed after max retries') };
+};
+
+export const updatePlayerVoteTransaction = async (roomId: string, playerName: string, vote: any, hasVoted: boolean) => {
+  const maxRetries = 3;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const result = await runTransaction(db, async (transaction) => {
+        const roomRef = doc(db, 'rooms', roomId);
+        const roomDoc = await transaction.get(roomRef);
+        
+        if (!roomDoc.exists()) {
+          throw new Error('Room not found');
+        }
+        
+        const roomData = roomDoc.data();
+        const participants = roomData.participants || [];
+        
+        const updatedParticipants = participants.map((p: any) => 
+          p.name === playerName 
+            ? { ...p, vote, hasVoted }
+            : p
+        );
+        
+        transaction.update(roomRef, { participants: updatedParticipants });
+        return { success: true };
+      });
+      
+      return result;
+    } catch (error: any) {
+      console.error('Transaction error:', error);
+      if (error.code === 'aborted' && attempt < maxRetries - 1) {
+        const delay = Math.random() * 500 + (attempt * 200);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      
+      return { success: false, error };
+    }
+  }
+  
+  return { success: false, error: new Error('Vote transaction failed after max retries') };
+};
+
+export const removePlayerTransaction = async (roomId: string, playerName: string) => {
+  const maxRetries = 3;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const result = await runTransaction(db, async (transaction) => {
+        const roomRef = doc(db, 'rooms', roomId);
+        const roomDoc = await transaction.get(roomRef);
+        
+        if (!roomDoc.exists()) {
+          throw new Error('Room not found');
+        }
+        
+        const roomData = roomDoc.data();
+        const participants = roomData.participants || [];
+        
+        const updatedParticipants = participants.filter((p: any) => p.name !== playerName);
+        
+        transaction.update(roomRef, { participants: updatedParticipants });
+        return { success: true };
+      });
+      
+      return result;
+    } catch (error: any) {
+      console.error('Transaction error:', error);
+      if (error.code === 'aborted' && attempt < maxRetries - 1) {
+        const delay = Math.random() * 500 + (attempt * 200);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      
+      return { success: false, error };
+    }
+  }
+  
+  return { success: false, error: new Error('Remove player transaction failed after max retries') };
 };
