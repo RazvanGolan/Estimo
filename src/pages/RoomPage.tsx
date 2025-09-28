@@ -38,7 +38,7 @@ export default function RoomPage() {
 
   const [tempName, setTempName] = useState("")
 
-  const { room, loading, hasJoined, vote: roomVote, revealVotes, startNewRound, removePlayer } = useRoom(
+  const { room, loading, hasJoined, isJoining, vote: roomVote, revealVotes, startNewRound, removePlayer } = useRoom(
     roomId, 
     playerName, 
     isHost
@@ -112,22 +112,23 @@ export default function RoomPage() {
     prevParticipantsRef.current = room?.participants || []
   }, [room?.participants, playerName, toast])
 
-  // Check if current user has been removed from the room
+  // Check if current user has been removed from the room (only after successfully joining)
   useEffect(() => {
-    if (room && !loading && room.participants && playerName && hasJoined) {
+    if (room && !loading && room.participants && playerName && hasJoined && !isJoining) {
       const currentPlayer = room.participants.find((p: any) => p.name === playerName)
       
-      if (!currentPlayer) {
-        
+      if (!currentPlayer && prevParticipantsRef.current.some((prev: any) => prev.name === playerName)) {
         toast({
           title: "You were removed from the room",
           description: "Redirecting to home page...",
         })
         
-        window.location.href = "/"
+        setTimeout(() => {
+          window.location.href = "/"
+        }, 2000)
       }
     }
-  }, [room, loading, playerName, hasJoined, toast])
+  }, [room, loading, playerName, hasJoined, isJoining, toast])
 
   useEffect(() => {
     if (room?.votesRevealed && !prevVotesRevealedRef.current && room.participants?.length > 0) {
@@ -180,7 +181,7 @@ export default function RoomPage() {
   }, [participants])
 
   const showNameDialog = !playerName
-  const showLoading = !showNameDialog && loading
+  const showLoading = !showNameDialog && (loading || isJoining)
 
   const votesRevealed = room?.votesRevealed || false
 
@@ -218,7 +219,9 @@ export default function RoomPage() {
       {showLoading && (
         <div className="flex items-center justify-center">
           <div className="text-center">
-            <div className="text-lg">Loading room...</div>
+            <div className="text-lg">
+              {isJoining ? "Joining room..." : "Loading room..."}
+            </div>
           </div>
         </div>
       )}
