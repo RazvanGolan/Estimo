@@ -6,11 +6,11 @@ import { Badge } from "../components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog"
 import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
-import { Users, Eye, EyeOff, RotateCcw, Copy, Check, QrCode, Trash2, LogOut, Github } from "lucide-react"
+import { Users, Eye, EyeOff, RotateCcw, Copy, Check, QrCode, Trash2, LogOut, Github, Crown } from "lucide-react"
 import { useToast } from "../hooks/use-toast"
 import { useRoom } from "../../hooks/use-firestore"
 
-const STORY_POINTS = [1, 2, 3, 5, 8, 13, 21, 34, '?', '∞', '☕', '🥷']
+const STORY_POINTS = [1, 2, 3, 5, 8, 13, 21, 34, '?', '∞', '☕', '⁶🤷‍♂️⁷']
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>()
@@ -19,7 +19,6 @@ export default function RoomPage() {
 
   const searchParams = new URLSearchParams(location.search)
   const urlPlayerName = searchParams.get("name")
-  const isHost = searchParams.get("host") === "true"
 
   const [playerName, setPlayerName] = useState<string>(() => {
     const storedName = localStorage.getItem("estimo_player_name")
@@ -38,11 +37,18 @@ export default function RoomPage() {
 
   const [tempName, setTempName] = useState("")
 
-  const { room, loading, hasJoined, isJoining, vote: roomVote, revealVotes, startNewRound, removePlayer } = useRoom(
+  const { room, loading, hasJoined, isJoining, vote: roomVote, revealVotes, startNewRound, removePlayer, transferHost } = useRoom(
     roomId, 
-    playerName, 
-    isHost
+    playerName
   )
+
+  const isHost = useMemo(() => {
+    if (room?.participants && playerName) {
+      const currentPlayer = room.participants.find((p: any) => p.name === playerName)
+      if (currentPlayer !== undefined) return currentPlayer.isHost === true
+    }
+    return false
+  }, [room?.participants, playerName])
 
   const [currentPlayerVote, setCurrentPlayerVote] = useState<number | string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -139,6 +145,16 @@ export default function RoomPage() {
     }
     prevVotesRevealedRef.current = room?.votesRevealed || false
   }, [room?.votesRevealed, room?.participants, toast])
+
+  const handleMakeHost = useCallback(async (newHostName: string) => {
+    if (window.confirm(`Make ${newHostName} the new host?`)) {
+      await transferHost(newHostName)
+      toast({
+        title: "Host transferred",
+        description: `${newHostName} is now the host`,
+      })
+    }
+  }, [transferHost, toast])
 
   const handleRemovePlayer = useCallback(async (playerToRemove: string) => {
     if (playerToRemove === playerName) {
@@ -336,15 +352,26 @@ export default function RoomPage() {
                     )}
                   </div>
                   {(isHost && player.name !== playerName) && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleRemovePlayer(player.name)}
-                      className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                      title={player.name === playerName ? "Leave room" : "Remove player"}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleMakeHost(player.name)}
+                        className="h-6 w-6 p-0 text-muted-foreground hover:text-yellow-500"
+                        title="Make host"
+                      >
+                        <Crown className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemovePlayer(player.name)}
+                        className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                        title="Remove player"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   )}
                 </div>
 

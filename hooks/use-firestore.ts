@@ -9,7 +9,8 @@ import {
   subscribeToDocument,
   joinRoomTransaction,
   updatePlayerVoteTransaction,
-  removePlayerTransaction
+  removePlayerTransaction,
+  transferHostTransaction
 } from '../lib/firestore';
 import { QueryConstraint } from 'firebase/firestore';
 
@@ -172,7 +173,7 @@ export const useFirestore = () => {
   return { add, set, update, remove, loading, error };
 };
 
-export const useRoom = (roomId: string | undefined, playerName: string, isHost: boolean) => {
+export const useRoom = (roomId: string | undefined, playerName: string) => {
   const { update } = useFirestore();
   const { data: roomData, loading } = useDocument('rooms', roomId || null, true);
   const [hasJoined, setHasJoined] = useState(false);
@@ -189,7 +190,6 @@ export const useRoom = (roomId: string | undefined, playerName: string, isHost: 
 
     const participant = {
       name: playerName,
-      isHost,
       joinedAt: new Date(),
       vote: null,
       hasVoted: false
@@ -278,6 +278,16 @@ export const useRoom = (roomId: string | undefined, playerName: string, isHost: 
     }
   };
 
+  const transferHost = async (newHostName: string) => {
+    if (!roomId) return;
+
+    try {
+      await transferHostTransaction(roomId, newHostName);
+    } catch (error) {
+      console.error('Transfer host error:', error);
+    }
+  };
+
   return {
     room: roomData,
     loading,
@@ -287,6 +297,7 @@ export const useRoom = (roomId: string | undefined, playerName: string, isHost: 
     vote,
     revealVotes,
     startNewRound,
-    removePlayer
+    removePlayer,
+    transferHost
   };
 };

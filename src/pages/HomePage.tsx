@@ -61,7 +61,7 @@ export default function HomePage() {
         participants: [playerName]
       })
       saveUserData(playerName.trim())
-      navigate(`/room/${newRoomId}?name=${encodeURIComponent(playerName)}&host=true`)
+      navigate(`/room/${newRoomId}?name=${encodeURIComponent(playerName)}`)
     } else {
       saveUserData(playerName.trim())
       navigate(`/room/${roomId}?name=${encodeURIComponent(playerName)}`)
