@@ -193,7 +193,6 @@ export const joinRoomTransaction = async (roomId: string, participant: any) => {
           );
           
           if (participantExists) {
-            // Re-joining: preserve the existing isHost value
             const updatedParticipants = existingParticipants.map((p: any) => 
               p.name === participant.name 
                 ? { ...participant, isHost: p.isHost, joinedAt: new Date() }

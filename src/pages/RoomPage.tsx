@@ -1,16 +1,26 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { useParams, useLocation } from "react-router-dom"
+import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, PieChart, Pie, Cell, ResponsiveContainer } from "recharts"
 import { Button } from "../components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Badge } from "../components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog"
 import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
-import { Users, Eye, EyeOff, RotateCcw, Copy, Check, QrCode, Trash2, LogOut, Github, Crown } from "lucide-react"
+import { Users, Eye, EyeOff, RotateCcw, Copy, Check, QrCode, Trash2, LogOut, Github, Crown, Info } from "lucide-react"
 import { useToast } from "../hooks/use-toast"
+import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover"
 import { useRoom } from "../../hooks/use-firestore"
 
 const STORY_POINTS = [1, 2, 3, 5, 8, 13, 21, 34, '?', '∞', '☕', '⁶🤷‍♂️⁷']
+
+const CHART_COLORS = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+]
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>()
@@ -29,10 +39,6 @@ export default function RoomPage() {
       return urlPlayerName
     }
     return ""
-  })
-
-  const [showNameModal, setShowNameModal] = useState<boolean>(() => {
-    return !urlPlayerName && !localStorage.getItem("estimo_player_name")
   })
 
   const [tempName, setTempName] = useState("")
@@ -67,6 +73,26 @@ export default function RoomPage() {
     }
   }, [participants])
 
+  const voteDistribution = useMemo(() => {
+    const counts: Record<string, number> = {}
+    participants.forEach((p: any) => {
+      if (p.hasVoted && p.vote !== null) {
+        const key = String(p.vote)
+        counts[key] = (counts[key] || 0) + 1
+      }
+    })
+    return Object.entries(counts)
+      .map(([vote, count]) => ({ vote, count }))
+      .sort((a, b) => {
+        const numA = Number(a.vote)
+        const numB = Number(b.vote)
+        if (!isNaN(numA) && !isNaN(numB)) return numA - numB
+        if (!isNaN(numA)) return -1
+        if (!isNaN(numB)) return 1
+        return 0
+      })
+  }, [participants])
+
   const handleVote = useCallback(async (points: number | string) => {
     setCurrentPlayerVote(points)
     await roomVote(points)
@@ -78,7 +104,6 @@ export default function RoomPage() {
     const finalName = tempName.trim()
     setPlayerName(finalName)
     localStorage.setItem("estimo_player_name", finalName)
-    setShowNameModal(false)
     
     const newUrl = new URL(window.location.href)
     newUrl.searchParams.set("name", finalName)
@@ -196,15 +221,25 @@ export default function RoomPage() {
     return numericVotes.length > 0 ? (numericVotes.reduce((a: number, b: number) => a + b, 0) / numericVotes.length).toFixed(1) : "0"
   }, [participants])
 
+  const getSpread = useCallback(() => {
+    const numericVotes = participants
+      .filter((p: any) => p.vote !== null && typeof p.vote === 'number')
+      .map((p: any) => p.vote as number)
+    if (numericVotes.length < 2) return "N/A"
+    const avg = numericVotes.reduce((a: number, b: number) => a + b, 0) / numericVotes.length
+    const variance = numericVotes.reduce((sum: number, v: number) => sum + Math.pow(v - avg, 2), 0) / numericVotes.length
+    return Math.sqrt(variance).toFixed(1)
+  }, [participants])
+
   const showNameDialog = !playerName
   const showLoading = !showNameDialog && (loading || isJoining)
 
   const votesRevealed = room?.votesRevealed || false
 
   return (
-    <div className="min-h-screen bg-background p-4">
+    <div className="min-h-screen bg-background p-4 flex flex-col">
       {showNameDialog && (
-        <Dialog open={showNameModal} onOpenChange={() => {}}>
+        <Dialog open={true} onOpenChange={() => {}}>
           <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
             <DialogHeader>
               <DialogTitle>Join Room {roomId}</DialogTitle>
@@ -242,7 +277,7 @@ export default function RoomPage() {
         </div>
       )}
       {!showNameDialog && !showLoading && (
-      <div className="max-w-6xl mx-auto space-y-6">
+      <div className="max-w-6xl mx-auto flex flex-col gap-6 flex-1 w-full">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -403,8 +438,9 @@ export default function RoomPage() {
             <CardHeader>
               <CardTitle>Results Summary</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+            <CardContent className="space-y-6">
+              {/* Stats */}
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-4 text-center">
                 <div>
                   <p className="text-2xl font-bold text-primary">{getAverage()}</p>
                   <p className="text-sm text-muted-foreground">Average</p>
@@ -431,7 +467,101 @@ export default function RoomPage() {
                   <p className="text-2xl font-bold text-foreground">{votedPlayers.length}</p>
                   <p className="text-sm text-muted-foreground">Total Votes</p>
                 </div>
+                <div>
+                  <p className="text-2xl font-bold text-foreground">{getSpread()}</p>
+                  <div className="flex items-center justify-center gap-1">
+                    <p className="text-sm text-muted-foreground">Spread (σ)</p>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Info className="h-3 w-3 text-muted-foreground cursor-pointer" />
+                      </PopoverTrigger>
+                      <PopoverContent className="max-w-56 text-center text-xs">
+                        Standard deviation of numeric votes. Measures how spread out the estimates are. A value near 0 means strong agreement; a higher value means more disagreement.
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
               </div>
+
+              {/* Charts */}
+              {voteDistribution.length > 0 && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Bar chart */}
+                  <div>
+                    <p className="text-sm font-medium text-center text-muted-foreground mb-3">Vote Distribution</p>
+                    <div className="[&_.recharts-cartesian-axis-tick_text]:fill-muted-foreground [&_.recharts-cartesian-grid_line]:stroke-border">
+                      <ResponsiveContainer width="100%" height={200}>
+                        <BarChart data={voteDistribution} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                          <XAxis dataKey="vote" tick={{ fontSize: 12 }} />
+                          <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                          <RechartsTooltip
+                            cursor={{ fill: 'var(--muted)', opacity: 0.4 }}
+                            content={({ active, payload }) => {
+                              if (!active || !payload?.length) return null
+                              return (
+                                <div className="bg-background border border-border rounded-lg px-2.5 py-1.5 text-xs shadow-xl">
+                                  <p className="font-medium">{payload[0].payload.vote} points</p>
+                                  <p className="text-muted-foreground">{payload[0].value} vote{payload[0].value !== 1 ? 's' : ''}</p>
+                                </div>
+                              )
+                            }}
+                          />
+                          <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                            {voteDistribution.map((_, index) => (
+                              <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Donut pie chart */}
+                  <div>
+                    <p className="text-sm font-medium text-center text-muted-foreground mb-3">Vote Share</p>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <PieChart>
+                        <Pie
+                          data={voteDistribution}
+                          dataKey="count"
+                          nameKey="vote"
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={50}
+                          outerRadius={80}
+                          paddingAngle={2}
+                        >
+                          {voteDistribution.map((_, index) => (
+                            <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <RechartsTooltip
+                          content={({ active, payload }) => {
+                            if (!active || !payload?.length) return null
+                            const total = voteDistribution.reduce((s, d) => s + d.count, 0)
+                            const pct = total > 0 ? ((payload[0].value as number) / total * 100).toFixed(0) : 0
+                            return (
+                              <div className="bg-background border border-border rounded-lg px-2.5 py-1.5 text-xs shadow-xl">
+                                <p className="font-medium">{payload[0].name} points</p>
+                                <p className="text-muted-foreground">{payload[0].value} vote{payload[0].value !== 1 ? 's' : ''} ({pct}%)</p>
+                              </div>
+                            )
+                          }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    {/* Legend */}
+                    <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 mt-1">
+                      {voteDistribution.map((entry, index) => (
+                        <div key={entry.vote} className="flex items-center gap-1.5 text-xs">
+                          <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }} />
+                          <span className="text-muted-foreground">{entry.vote} pts — {entry.count}×</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -460,7 +590,7 @@ export default function RoomPage() {
         )}
 
         {/* Footer */}
-        <div className="flex justify-center pt-8">
+        <div className="flex justify-center mt-auto pt-8">
           <Button
             onClick={() => window.open("https://github.com/RazvanGolan/Estimo", "_blank")}
             variant="ghost"
